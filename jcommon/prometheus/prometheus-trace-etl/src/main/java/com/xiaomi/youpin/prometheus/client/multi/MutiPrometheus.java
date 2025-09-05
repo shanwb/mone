@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * @author zhangxiaowei
@@ -33,7 +34,7 @@ public class MutiPrometheus implements MetricsManager {
 
     private CollectorRegistry registry;
 
-    private final Object[] segmentLocks = new Object[SEGMENT_COUNT];
+    private final ReentrantLock[] segmentLocks = new ReentrantLock[SEGMENT_COUNT];
 
     public MutiPrometheus() {
         this.prometheusMetrics = new ConcurrentHashMap<>();
@@ -50,14 +51,14 @@ public class MutiPrometheus implements MetricsManager {
 
     private void initSegmentLocks() {
         for (int i = 0; i < SEGMENT_COUNT; i++) {
-            segmentLocks[i] = new Object();
+            segmentLocks[i] = new ReentrantLock();
         }
     }
 
     /**
      * 根据metricName获取对应的分段锁
      */
-    private Object getSegmentLock(String metricName) {
+    private ReentrantLock getSegmentLock(String metricName) {
         int hash = metricName.hashCode();
         // 使用绝对值避免负数，然后取模
         int index = Math.abs(hash) % SEGMENT_COUNT;
@@ -89,22 +90,25 @@ public class MutiPrometheus implements MetricsManager {
             return existing;
         }
         
-        Object lock = getSegmentLock(metricName);
-        synchronized (lock) {
+        ReentrantLock lock = getSegmentLock(metricName);
+        lock.lock();
+        try {
             // 🔒 锁内双重检查
             existing = (XmCounter) prometheusTypeMetrics.get(metricName);
             if (existing != null) {
                 return existing;
             }
-            
+
             Counter counter = createCounterUnsafe(metricName, labelName);
             if (counter == null) {
                 return null;
             }
-            
+
             PrometheusCounter prometheusCounter = new PrometheusCounter(counter, labelName, null, this);
             prometheusTypeMetrics.put(metricName, prometheusCounter);
             return prometheusCounter;
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -115,9 +119,10 @@ public class MutiPrometheus implements MetricsManager {
         if (existing != null) {
             return existing;
         }
-        
-        Object lock = getSegmentLock(metricName);
-        synchronized (lock) {
+
+        ReentrantLock lock = getSegmentLock(metricName);
+        lock.lock();
+        try {
             // 🔒 锁内双重检查
             existing = (XmGauge) prometheusTypeMetrics.get(metricName);
             if (existing != null) {
@@ -132,6 +137,8 @@ public class MutiPrometheus implements MetricsManager {
             PrometheusGauge prometheusGauge = new PrometheusGauge(gauge, labelName, null, this);
             prometheusTypeMetrics.put(metricName, prometheusGauge);
             return prometheusGauge;
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -153,9 +160,10 @@ public class MutiPrometheus implements MetricsManager {
         String[] preparedLabelNames = mylist.toArray(new String[mylist.size()]);
         String preparedNamespace = constLabels.get(MutiMetrics.GROUP) + 
                 ("".equals(constLabels.get(MutiMetrics.SERVICE)) ? "" : "_" + constLabels.get(MutiMetrics.SERVICE));
-        
-        Object lock = getSegmentLock(metricName);
-        synchronized (lock) {
+
+        ReentrantLock lock = getSegmentLock(metricName);
+        lock.lock();
+        try {
             // 🔒 锁内双重检查，避免竞态条件
             existing = (XmHistogram) prometheusTypeMetrics.get(metricName);
             if (existing != null) {
@@ -172,6 +180,8 @@ public class MutiPrometheus implements MetricsManager {
             PrometheusHistogram prometheusHistogram = new PrometheusHistogram(histogram, labelNames, null, this);
             prometheusTypeMetrics.put(metricName, prometheusHistogram);
             return prometheusHistogram;
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -300,23 +310,32 @@ public class MutiPrometheus implements MetricsManager {
     }
 
     public Counter getCounter(String metricName, String... labelName) {
-        Object lock = getSegmentLock(metricName);
-        synchronized (lock) {
+        ReentrantLock lock = getSegmentLock(metricName);
+        lock.lock();
+        try {
             return createCounterUnsafe(metricName, labelName);
+        } finally {
+            lock.unlock();
         }
     }
 
     public Gauge getGauge(String metricName, String... labelName) {
-        Object lock = getSegmentLock(metricName);
-        synchronized (lock) {
+        ReentrantLock lock = getSegmentLock(metricName);
+        lock.lock();
+        try {
             return createGaugeUnsafe(metricName, labelName);
+        } finally {
+            lock.unlock();
         }
     }
 
     public Histogram getHistogram(String metricName, double[] buckets, String... labelNames) {
-        Object lock = getSegmentLock(metricName);
-        synchronized (lock) {
+        ReentrantLock lock = getSegmentLock(metricName);
+        lock.lock();
+        try {
             return createHistogramUnsafe(metricName, buckets, labelNames);
+        } finally {
+            lock.unlock();
         }
     }
 }
