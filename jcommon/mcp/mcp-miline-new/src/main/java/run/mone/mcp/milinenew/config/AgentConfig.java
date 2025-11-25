@@ -6,7 +6,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import run.mone.hive.mcp.function.ChatFunction;
 import run.mone.hive.mcp.service.RoleMeta;
-import run.mone.hive.roles.tool.*;
 import run.mone.mcp.milinenew.function.CreatePipelineFunction;
 import run.mone.mcp.milinenew.function.CreateProjectFunction;
 import run.mone.mcp.milinenew.function.GenerateGitCodeFunction;
